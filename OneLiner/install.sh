@@ -20,7 +20,7 @@ else
     exit 1
 fi
 
-dependencies=("docker")
+dependencies=("docker" "docker-compose")
 for dependency in "${dependencies[@]}"; do
     if ! command -v "$dependency" &> /dev/null; then
         echo "Error: $dependency is not installed."
@@ -28,19 +28,18 @@ for dependency in "${dependencies[@]}"; do
     fi
 done
 
-if ! docker info > /dev/null 2>&1; then
-  echo "This script uses docker, and it isn't running - please start docker and try again!"
+if ! sudo docker info > /dev/null 2>&1; then
+  echo "This script uses Docker, and it isn't running - please start Docker and try again!"
   exit 1
 fi
 
-docker compose &>/dev/null 
-
-if [ $? -ne 0 ]; then
-    echo "You need to install docker compose (v2) to continue"
+# Check for docker-compose
+if ! sudo docker-compose version > /dev/null 2>&1; then
+    echo "You need to install Docker Compose (v2) to continue"
     exit 1
 fi
 
-#ask for installation directory, default to home
+# Ask for installation directory, default to home
 read -p "Enter an absolute path to place the installation directory (or press Enter for the home folder): " user_input
 path=${user_input:-$HOME}
 
@@ -50,62 +49,62 @@ if [ -d "$path/unifi" ]; then
 fi
 echo ""
 
-mkdir -p "$path/unifi"
-mkdir -p "$path/unifi/unifi-network-application"
-mkdir -p "$path/unifi/unifi-db"
+sudo mkdir -p "$path/unifi"
+sudo mkdir -p "$path/unifi/unifi-network-application"
+sudo mkdir -p "$path/unifi/unifi-db"
 
-#ask for database password, default to pass
+# Ask for database password, default to pass
 read -p "Enter the password for the database (or press Enter for the default value: pass): " user_input
 echo ""
 password=${user_input:-"pass"}
 
-#create a temporary folder to be used during installation process
+# Create a temporary folder to be used during installation process
 tmp_dir="$HOME/unifi-install-tmp"
-rm -rf "$tmp_dir"
+sudo rm -rf "$tmp_dir"
 mkdir -p "$tmp_dir"
 cd "$tmp_dir"
 
-#download the compose file
+# Download the compose file
 wget -q -O docker-compose.yml https://raw.githubusercontent.com/GiuseppeGalilei/Unifi-Network-Application/main/OneLiner/docker-compose.yml >/dev/null 2>&1
 
-#generate env file and place it in the unifi-install-tmp folder
+# Generate env file and place it in the unifi-install-tmp folder
 echo "INSTALL_FOLDER=$path" > .env
 echo "DB_PASSWORD=$password" >> .env
 
-#generate init-mongo.js file 
-cat <<EOL > $path/unifi/init-mongo.js
+# Generate init-mongo.js file 
+cat <<EOL | sudo tee $path/unifi/init-mongo.js > /dev/null
 db.getSiblingDB("unifi-db").createUser({user: "unifi", pwd: "$password", roles: [{role: "dbOwner", db: "unifi-db"}]});
 db.getSiblingDB("unifi-db_stat").createUser({user: "unifi", pwd: "$password", roles: [{role: "dbOwner", db: "unifi-db_stat"}]});
 EOL
 
-#install
+# Install
 container_names=("unifi-db" "unifi-network-application")
 
 # Check and remove containers and volumes
 for container_name in "${container_names[@]}"; do
-    if docker ps -a --format '{{.Names}}' | grep -q "^$container_name$"; then
+    if sudo docker ps -a --format '{{.Names}}' | grep -q "^$container_name$"; then
         echo "Stopping and removing container $container_name..."
-        docker stop "$container_name" >/dev/null 2>&1
-        docker rm "$container_name" >/dev/null 2>&1
+        sudo docker stop "$container_name" >/dev/null 2>&1
+        sudo docker rm "$container_name" >/dev/null 2>&1
 
         # Remove associated volumes
         echo "Removing volumes for container $container_name..."
-        docker volume rm "$(docker volume ls -qf "name=${container_name}_data")" >/dev/null 2>&1
+        sudo docker volume rm "$(sudo docker volume ls -qf "name=${container_name}_data")" >/dev/null 2>&1
     fi
 done
 
-docker compose up -d
+sudo docker-compose up -d
 
 # Check the exit code of the previous command
 if [ $? -ne 0 ]; then
-    echo "Error: "docker compose up" failed"
+    echo "Error: 'docker-compose up' failed"
     exit 1
 fi
 
-echo "docker compose up completed successfully"
+echo "docker-compose up completed successfully"
 
 for container_name in "${container_names[@]}"; do
-    while ! docker inspect -f '{{.State.Running}}' "$container_name" &>/dev/null; do
+    while ! sudo docker inspect -f '{{.State.Running}}' "$container_name" &>/dev/null; do
         echo "Waiting for containers to start..."
         sleep 1
     done
@@ -113,10 +112,9 @@ done
 
 echo ""
 
-rm -rf "$tmp_dir"
+sudo rm -rf "$tmp_dir"
 
-#ending message
-
+# Ending message
 echo '
 Done!
 The dashboard will be available soon on port 8443.
